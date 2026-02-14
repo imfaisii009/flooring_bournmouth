@@ -294,36 +294,19 @@ export const useSupportStore = create<SupportState>((set, get) => ({
         throw new Error(errorData.error || 'Failed to send message')
       }
 
-      const result = await response.json()
-      const realMessage = result.message
+      await response.json()
 
-      // Wait briefly for realtime to potentially fire first
-      await new Promise(resolve => setTimeout(resolve, 100))
-
-      // Check if realtime already added the message
-      const currentMessages = get().messages
-      const messageExists = currentMessages.some(m => m.id === realMessage.id)
-
-      if (messageExists) {
-        // Realtime already added it - just remove temp and update state
+      // Success! Realtime will add the message automatically
+      // Just clean up the temp message after a short delay
+      setTimeout(() => {
+        const currentMessages = get().messages
         set({
           messages: currentMessages.filter(m => m.id !== tempId),
           isSending: false,
         })
-        console.log('[Support:Store] Message added by realtime')
-      } else {
-        // Realtime hasn't fired - add real message ourselves
-        set({
-          messages: [
-            ...currentMessages.filter(m => m.id !== tempId),
-            realMessage
-          ],
-          isSending: false,
-        })
-        console.log('[Support:Store] Message added directly (realtime pending)')
-      }
+      }, 500)
 
-      console.log('[Support:Store] Message sent successfully')
+      console.log('[Support:Store] Message sent, realtime will add it')
     } catch (error) {
       console.error('[Support:Store] Failed to send message:', error)
 
@@ -381,8 +364,13 @@ export const useSupportStore = create<SupportState>((set, get) => ({
           const messageExists = state.messages.some((m) => m.id === newMessage.id)
 
           if (!messageExists) {
+            // Remove any temp messages before adding real message
+            const messagesWithoutTemp = state.messages.filter(m => !m.id.startsWith('temp_'))
+
             // Add message to state
-            set({ messages: [...state.messages, newMessage] })
+            set({ messages: [...messagesWithoutTemp, newMessage] })
+
+            console.log('[Support:Store] Realtime added message, removed temp messages')
 
             // Increment unread count if from support and widget closed
             if (newMessage.sender_type === 'support' && !state.isOpen) {
