@@ -30,6 +30,7 @@ export default function SupportChatInput({ anonymousId }: SupportChatInputProps)
   const [selectedImage, setSelectedImage] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [isUploading, setIsUploading] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -70,9 +71,12 @@ export default function SupportChatInput({ anonymousId }: SupportChatInputProps)
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
 
-    if ((!message.trim() && !selectedImage) || isSending || !anonymousId) {
+    // Prevent double submission
+    if (isSubmitting || isSending || !anonymousId || (!message.trim() && !selectedImage)) {
       return
     }
+
+    setIsSubmitting(true)
 
     const messageText = message.trim()
     let imageUrl: string | undefined
@@ -99,6 +103,7 @@ export default function SupportChatInput({ anonymousId }: SupportChatInputProps)
         console.error('[Support:Input] Failed to upload image:', err)
         setError('Failed to upload image. Please try again.')
         setIsUploading(false)
+        setIsSubmitting(false)
         return
       } finally {
         setIsUploading(false)
@@ -123,6 +128,8 @@ export default function SupportChatInput({ anonymousId }: SupportChatInputProps)
       console.error('[Support:Input] Failed to send message:', err)
       // Restore message on error (but not image)
       if (messageText) setMessage(messageText)
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -203,14 +210,14 @@ export default function SupportChatInput({ anonymousId }: SupportChatInputProps)
             accept="image/jpeg,image/png,image/gif,image/webp"
             onChange={handleImageSelect}
             className="hidden"
-            disabled={isSending || isUploading}
+            disabled={isSending || isUploading || isSubmitting}
           />
 
           {/* Image upload button */}
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            disabled={isSending || isUploading}
+            disabled={isSending || isUploading || isSubmitting}
             className="border border-gray-300 text-gray-600 p-3 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-shrink-0"
             aria-label="Attach image"
           >
@@ -228,7 +235,7 @@ export default function SupportChatInput({ anonymousId }: SupportChatInputProps)
                 : 'Describe your issue...'
             }
             className="flex-1 border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed text-sm text-gray-900 placeholder:text-gray-400"
-            disabled={isSending || isUploading}
+            disabled={isSending || isUploading || isSubmitting}
             maxLength={5000}
             autoFocus={!currentConversation}
           />
@@ -236,11 +243,11 @@ export default function SupportChatInput({ anonymousId }: SupportChatInputProps)
           {/* Send button */}
           <button
             type="submit"
-            disabled={isSending || isUploading || (!message.trim() && !selectedImage)}
+            disabled={isSending || isUploading || isSubmitting || (!message.trim() && !selectedImage)}
             className="bg-blue-600 text-white p-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-shrink-0"
             aria-label="Send message"
           >
-            {isSending || isUploading ? (
+            {isSending || isUploading || isSubmitting ? (
               <Loader2 className="w-5 h-5 animate-spin" />
             ) : (
               <Send className="w-5 h-5" />

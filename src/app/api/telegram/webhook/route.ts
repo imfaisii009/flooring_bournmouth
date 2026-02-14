@@ -6,7 +6,77 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supportService } from '@/lib/services/support-service'
 import { telegramService } from '@/lib/services/telegram-service'
+import { createClient } from '@/lib/supabase/server'
 import type { TelegramUpdate } from '@/types/support'
+
+/**
+ * Download image from Telegram and upload to Supabase Storage
+ * This avoids CORS issues and ensures images are permanently stored
+ */
+async function downloadAndUploadTelegramPhoto(
+  fileId: string,
+  botToken: string
+): Promise<string | null> {
+  try {
+    // Get file path from Telegram
+    const fileResponse = await fetch(
+      `https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`
+    )
+    const fileData = await fileResponse.json()
+
+    if (!fileData.ok || !fileData.result.file_path) {
+      console.error('[Telegram Webhook] Failed to get file info:', fileData)
+      return null
+    }
+
+    // Download file from Telegram
+    const fileUrl = `https://api.telegram.org/file/bot${botToken}/${fileData.result.file_path}`
+    const downloadResponse = await fetch(fileUrl)
+
+    if (!downloadResponse.ok) {
+      console.error('[Telegram Webhook] Failed to download file')
+      return null
+    }
+
+    const fileBuffer = await downloadResponse.arrayBuffer()
+    const fileBlob = new Blob([fileBuffer])
+
+    // Determine file extension from path
+    const filePath = fileData.result.file_path
+    const extension = filePath.split('.').pop() || 'jpg'
+
+    // Generate unique filename
+    const timestamp = Date.now()
+    const randomString = Math.random().toString(36).substring(2, 15)
+    const filename = `telegram_${timestamp}_${randomString}.${extension}`
+
+    // Upload to Supabase Storage
+    const supabase = await createClient()
+    const { data, error } = await supabase.storage
+      .from('support-images')
+      .upload(filename, fileBlob, {
+        contentType: downloadResponse.headers.get('content-type') || 'image/jpeg',
+        cacheControl: '3600',
+        upsert: false,
+      })
+
+    if (error) {
+      console.error('[Telegram Webhook] Supabase upload error:', error)
+      return null
+    }
+
+    // Get public URL
+    const { data: urlData } = supabase.storage
+      .from('support-images')
+      .getPublicUrl(data.path)
+
+    console.log('[Telegram Webhook] Image uploaded to Supabase:', urlData.publicUrl)
+    return urlData.publicUrl
+  } catch (error) {
+    console.error('[Telegram Webhook] Error downloading/uploading image:', error)
+    return null
+  }
+}
 
 /**
  * POST /api/telegram/webhook
@@ -122,22 +192,10 @@ export async function POST(req: NextRequest) {
       const largestPhoto = message.photo[message.photo.length - 1]
       const fileId = largestPhoto.file_id
 
-      // Get file path from Telegram
-      try {
-        const botToken = process.env.TELEGRAM_BOT_TOKEN
-        const fileResponse = await fetch(
-          `https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`
-        )
-        const fileData = await fileResponse.json()
-
-        if (fileData.ok && fileData.result.file_path) {
-          // Construct full URL to the file
-          imageUrl = `https://api.telegram.org/file/bot${botToken}/${fileData.result.file_path}`
-        }
-      } catch (error) {
-        console.error('[Telegram Webhook] Failed to get file URL:', error)
-        // Fallback to file_id if URL fetch fails
-        imageUrl = fileId
+      // Download from Telegram and upload to Supabase
+      const botToken = process.env.TELEGRAM_BOT_TOKEN
+      if (botToken) {
+        imageUrl = await downloadAndUploadTelegramPhoto(fileId, botToken) || undefined
       }
     }
 

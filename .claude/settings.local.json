@@ -26,7 +26,8 @@
       "mcp__supabase__get_logs",
       "Bash(pnpm build:*)",
       "Bash(npx supabase gen types typescript --local:*)",
-      "Bash(node -e:*)"
+      "Bash(node -e:*)",
+      "Bash(curl \"https://api.telegram.org/bot8031057657:AAFcCyMkx3CrwUlZXDqfF3OyhAWrYenKUWo/getWebhookInfo\")"
     ]
   },
   "enableAllProjectMcpServers": true,
