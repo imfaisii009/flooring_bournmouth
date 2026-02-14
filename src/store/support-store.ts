@@ -170,20 +170,33 @@ export const useSupportStore = create<SupportState>((set, get) => ({
 
     if (conversation) {
       // Try to restore messages from localStorage first (instant load)
-      const cachedMessages = localStorage.getItem(`support_messages_${conversation.id}`)
+      const cacheKey = `support_messages_${conversation.id}`
+      const cachedMessages = localStorage.getItem(cacheKey)
       const initialMessages = cachedMessages ? JSON.parse(cachedMessages) : []
+
+      console.log('[Support:Store] 📝 Setting conversation:', {
+        id: conversation.id,
+        cacheKey,
+        cachedCount: initialMessages.length,
+        hasCachedData: !!cachedMessages,
+      })
 
       set({ currentConversation: conversation, messages: initialMessages })
 
       if (initialMessages.length > 0) {
-        console.log('[Support:Store] Restored', initialMessages.length, 'messages from cache')
+        console.log('[Support:Store] ✅ Restored', initialMessages.length, 'messages from localStorage')
+      } else {
+        console.log('[Support:Store] ⚠️  No cached messages found, will load from API')
       }
 
       // Load messages from server and subscribe (will update if there are new messages)
       const anonymousId = localStorage.getItem('support_anonymous_id')
       if (anonymousId) {
+        console.log('[Support:Store] 🔄 Loading fresh messages from API for conversation:', conversation.id)
         get().loadConversationMessages(conversation.id, anonymousId)
         get().subscribeToMessages(conversation.id)
+      } else {
+        console.error('[Support:Store] ❌ No anonymous ID found in localStorage!')
       }
     } else {
       set({ currentConversation: null, messages: [] })

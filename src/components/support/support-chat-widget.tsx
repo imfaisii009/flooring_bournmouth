@@ -61,12 +61,38 @@ export default function SupportChatWidget() {
   // Restore current conversation from localStorage when conversations load
   useEffect(() => {
     const savedConversationId = localStorage.getItem('support_current_conversation_id')
-    if (savedConversationId && conversations.length > 0 && !currentConversation) {
+    console.log('[Support:Widget] Restore check:', {
+      savedConversationId,
+      conversationsCount: conversations.length,
+      hasCurrentConversation: !!currentConversation,
+    })
+
+    // Skip if already have a current conversation or no conversations loaded
+    if (currentConversation || conversations.length === 0) {
+      return
+    }
+
+    // Try to restore saved conversation first
+    if (savedConversationId) {
       const conversation = conversations.find(c => c.id === savedConversationId)
       if (conversation) {
+        console.log('[Support:Widget] ✅ Restoring saved conversation:', savedConversationId)
         setCurrentConversation(conversation)
-        console.log('[Support:Widget] Restored conversation:', savedConversationId)
+        return
+      } else {
+        console.warn('[Support:Widget] ⚠️ Saved conversation not found, selecting most recent')
       }
+    }
+
+    // No saved conversation or it wasn't found - auto-select most recent conversation
+    const mostRecent = [...conversations].sort((a, b) =>
+      new Date(b.last_message_at || b.created_at).getTime() -
+      new Date(a.last_message_at || a.created_at).getTime()
+    )[0]
+
+    if (mostRecent) {
+      console.log('[Support:Widget] ✅ Auto-selecting most recent conversation:', mostRecent.id)
+      setCurrentConversation(mostRecent)
     }
   }, [conversations, currentConversation, setCurrentConversation])
 
