@@ -6,7 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supportService } from '@/lib/services/support-service'
 import { telegramService } from '@/lib/services/telegram-service'
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/api'
 import type { TelegramUpdate } from '@/types/support'
 
 /**
@@ -38,8 +38,9 @@ async function downloadAndUploadTelegramPhoto(
       return null
     }
 
+    // Get file buffer
     const fileBuffer = await downloadResponse.arrayBuffer()
-    const fileBlob = new Blob([fileBuffer])
+    const buffer = Buffer.from(fileBuffer)
 
     // Determine file extension from path
     const filePath = fileData.result.file_path
@@ -50,28 +51,49 @@ async function downloadAndUploadTelegramPhoto(
     const randomString = Math.random().toString(36).substring(2, 15)
     const filename = `telegram_${timestamp}_${randomString}.${extension}`
 
-    // Upload to Supabase Storage
-    const supabase = await createClient()
-    const { data, error } = await supabase.storage
-      .from('support-images')
-      .upload(filename, fileBlob, {
-        contentType: downloadResponse.headers.get('content-type') || 'image/jpeg',
-        cacheControl: '3600',
-        upsert: false,
-      })
+    console.log('[Telegram Webhook] Uploading file:', filename, 'Size:', buffer.length, 'bytes')
 
-    if (error) {
-      console.error('[Telegram Webhook] Supabase upload error:', error)
+    // Upload to Supabase Storage using service client (has full permissions)
+    try {
+      const supabase = createServiceClient()
+      const contentType = downloadResponse.headers.get('content-type') || 'image/jpeg'
+
+      const { data, error } = await supabase.storage
+        .from('support-images')
+        .upload(filename, buffer, {
+          contentType,
+          cacheControl: '3600',
+          upsert: false,
+        })
+
+      if (error) {
+        console.error('[Telegram Webhook] Supabase upload error:', error)
+        console.error('[Telegram Webhook] Error message:', error.message)
+        console.error('[Telegram Webhook] Error details:', JSON.stringify(error))
+        return null
+      }
+
+      if (!data?.path) {
+        console.error('[Telegram Webhook] Upload succeeded but no path returned')
+        return null
+      }
+
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from('support-images')
+        .getPublicUrl(data.path)
+
+      if (!urlData?.publicUrl) {
+        console.error('[Telegram Webhook] Failed to get public URL')
+        return null
+      }
+
+      console.log('[Telegram Webhook] Image uploaded to Supabase:', urlData.publicUrl)
+      return urlData.publicUrl
+    } catch (uploadError) {
+      console.error('[Telegram Webhook] Upload exception:', uploadError)
       return null
     }
-
-    // Get public URL
-    const { data: urlData } = supabase.storage
-      .from('support-images')
-      .getPublicUrl(data.path)
-
-    console.log('[Telegram Webhook] Image uploaded to Supabase:', urlData.publicUrl)
-    return urlData.publicUrl
   } catch (error) {
     console.error('[Telegram Webhook] Error downloading/uploading image:', error)
     return null
@@ -131,6 +153,10 @@ export async function POST(req: NextRequest) {
       update_id: update.update_id,
       has_message: !!update.message,
       message_thread_id: update.message?.message_thread_id,
+      has_photo: !!update.message?.photo,
+      has_reply_photo: !!update.message?.reply_to_message?.photo,
+      text: update.message?.text,
+      caption: update.message?.caption,
     })
 
     // Step 3: Extract and validate message
@@ -186,16 +212,26 @@ export async function POST(req: NextRequest) {
     const content = message.text || message.caption || undefined
 
     // Get photo URL if present (use largest photo)
+    // Check both the message itself and reply_to_message for photos
     let imageUrl: string | undefined = undefined
-    if (message.photo && message.photo.length > 0) {
+    const photoSource = message.photo || message.reply_to_message?.photo
+
+    if (photoSource && photoSource.length > 0) {
       // Telegram provides multiple sizes, get the largest
-      const largestPhoto = message.photo[message.photo.length - 1]
+      const largestPhoto = photoSource[photoSource.length - 1]
       const fileId = largestPhoto.file_id
+
+      console.log('[Telegram Webhook] Processing photo, file_id:', fileId)
 
       // Download from Telegram and upload to Supabase
       const botToken = process.env.TELEGRAM_BOT_TOKEN
       if (botToken) {
         imageUrl = await downloadAndUploadTelegramPhoto(fileId, botToken) || undefined
+        if (!imageUrl) {
+          console.error('[Telegram Webhook] Failed to process photo attachment')
+        }
+      } else {
+        console.error('[Telegram Webhook] Bot token not configured')
       }
     }
 

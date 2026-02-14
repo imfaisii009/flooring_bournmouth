@@ -27,7 +27,9 @@
       "Bash(pnpm build:*)",
       "Bash(npx supabase gen types typescript --local:*)",
       "Bash(node -e:*)",
-      "Bash(curl \"https://api.telegram.org/bot8031057657:AAFcCyMkx3CrwUlZXDqfF3OyhAWrYenKUWo/getWebhookInfo\")"
+      "Bash(curl \"https://api.telegram.org/bot8031057657:AAFcCyMkx3CrwUlZXDqfF3OyhAWrYenKUWo/getWebhookInfo\")",
+      "Bash(npm run dev:*)",
+      "Bash(npx supabase db push:*)"
     ]
   },
   "enableAllProjectMcpServers": true,
